@@ -1,0 +1,38 @@
+name: Market holidays
+
+# Regenerates holidays/holidays.json from exchange_calendars and commits it when it changed. The
+# home screen downloads that file from the ifinstrats-office branch once a day.
+on:
+  schedule:
+    - cron: "30 2 * * 1" # Mondays 02:30 UTC (08:00 IST)
+  workflow_dispatch:
+  push:
+    branches: [ifinstrats-office]
+    paths: [holidays/generate.py, .github/workflows/holidays.yml]
+
+permissions:
+  contents: write
+
+concurrency: holidays
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ifinstrats-office
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Unpinned on purpose: new releases are how new holiday lists (like India's) arrive.
+      - run: pip install exchange_calendars
+      - run: python holidays/generate.py holidays/holidays.json
+      - name: Commit if changed
+        run: |
+          git add holidays/holidays.json
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update market holidays"
+          git push origin HEAD:ifinstrats-office
