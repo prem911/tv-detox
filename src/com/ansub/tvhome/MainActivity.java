@@ -230,7 +230,7 @@ public class MainActivity extends Activity {
     // GitHub Action. Downloaded at most once a day; until the first download, or if one fails, the
     // last good copy (or the dates built into MarketClock) is used.
     private static final String HOLIDAYS_URL =
-            "https://raw.githubusercontent.com/prem911/tv-detox/ifinstrats-office/holidays/holidays.json";
+            "https://raw.githubusercontent.com/prem911/tv-detox/main/holidays/holidays.json";
     private volatile boolean fetchingHolidays;
 
     private File holidaysFile() { return new File(getFilesDir(), "holidays.json"); }
