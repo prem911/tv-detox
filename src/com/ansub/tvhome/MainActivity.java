@@ -99,9 +99,9 @@ public class MainActivity extends Activity {
 
     // Layout is designed at 1920x1080 and scaled to the TV's real UI size by px().
     private static final int MARGIN = 96, GAP = 36, RADIUS = 22;
-    private static final int ROW1_TOP = 604, ROW_STEP = 224;
-    private static final int GRID_MIN_TOP = ROW1_TOP; // more rows scroll the page, so the market clocks stay clear
-    private static final int MARKETS_TOP = 236, MARKETS_H = 280;
+    // The apps sit below the market board, one screen down: Down from the top row scrolls to them.
+    private static final int ROW1_TOP = MarketBoard.BOTTOM + MARGIN, ROW_STEP = 224;
+    private static final int GRID_MIN_TOP = ROW1_TOP;
     private static final int ICON_TOP = 76, ICON_BUTTON = 72, ICON_SIZE = 40, ICON_GAP = 12; // level with the date
 
     // The Settings tile opens a small menu: the home screen's own settings, then the TV's.
@@ -173,10 +173,8 @@ public class MainActivity extends Activity {
     };
 
     // World market clocks: each card's Open/Closed pill and countdown, refreshed every minute.
-    private final List<TextView> marketStatus = new ArrayList<>(), marketPill = new ArrayList<>();
-    private final BroadcastReceiver minuteTick = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent i) { refreshMarkets(); }
-    };
+    private MarketBoard board;
+    private ScrollView scroller;
 
     // The company logo, centred in the top row, level with the date and the network icon.
     private void addBranding() {
@@ -188,115 +186,6 @@ public class MainActivity extends Activity {
         root.addView(logo, at);
     }
 
-    // One card per market between the clock and the apps: city, local time, open or closed.
-    private void addMarkets() {
-        int n = MarketClock.ALL.length;
-        int w = (getResources().getDisplayMetrics().widthPixels - 2 * px(MARGIN) - (n - 1) * px(GAP)) / n;
-        for (int i = 0; i < n; i++) {
-            MarketClock mk = MarketClock.ALL[i];
-            FrameLayout card = new FrameLayout(this);
-            LinearLayout col = new LinearLayout(this);
-            col.setOrientation(LinearLayout.VERTICAL);
-            col.setPadding(px(32), px(30), px(32), px(30));
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(0x14FFFFFF);
-            bg.setCornerRadius(px(RADIUS));
-            card.setBackground(bg);
-            TextView label = text(px(28), 0xA8FFFFFF, regular);
-            label.setText(mk.flag + "  " + mk.exchange);
-            TextClock time = clock("h:mm a", "HH:mm", px(96), 0xDDFFFFFF, semibold);
-            time.setTimeZone(mk.zone);
-            time.setIncludeFontPadding(false);
-            time.setFontFeatureSettings("tnum");
-            TextView status = text(px(26), 0xA8FFFFFF, regular);
-            col.addView(label);
-            col.addView(time);
-            col.addView(status);
-            card.addView(col);
-            TextView pill = text(px(22), Color.WHITE, semibold);
-            pill.setPadding(px(16), px(5), px(16), px(5));
-            FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
-            pp.topMargin = px(28);
-            pp.rightMargin = px(24);
-            card.addView(pill, pp);
-            marketStatus.add(status);
-            marketPill.add(pill);
-            root.addView(card, at(px(MARGIN) + i * (w + px(GAP)), px(MARKETS_TOP), w, px(MARKETS_H)));
-        }
-        refreshMarkets();
-    }
-
-    // Market sessions and holidays: holidays/holidays.json in this repo, kept up to date by its
-    // GitHub Action. Downloaded at most once a day; until the first download, or if one fails, the
-    // last good copy (or the dates built into MarketClock) is used.
-    private static final String HOLIDAYS_URL =
-            "https://raw.githubusercontent.com/prem911/tv-detox/main/holidays/holidays.json";
-    private volatile boolean fetchingHolidays;
-
-    private File holidaysFile() { return new File(getFilesDir(), "holidays.json"); }
-
-    private void loadHolidays() {
-        try (InputStream in = new FileInputStream(holidaysFile())) {
-            JSONObject markets = new JSONObject(new String(readAll(in), "UTF-8")).getJSONObject("markets");
-            for (MarketClock mk : MarketClock.ALL) {
-                JSONObject m = markets.optJSONObject(mk.exchange);
-                if (m == null) continue;
-                JSONObject d = m.getJSONObject("days");
-                Map<String, String> days = new HashMap<>();
-                for (Iterator<String> it = d.keys(); it.hasNext(); ) {
-                    String k = it.next();
-                    days.put(k, d.getString(k));
-                }
-                mk.setSessions(m.getString("from"), m.getString("until"), days);
-            }
-        } catch (Exception ignored) {} // not downloaded yet, or unreadable: the built-in dates stay
-    }
-
-    private void refreshHolidays() {
-        final File f = holidaysFile();
-        if (fetchingHolidays || System.currentTimeMillis() - f.lastModified() < 24L * 60 * 60 * 1000) return;
-        fetchingHolidays = true;
-        new Thread(() -> {
-            try {
-                HttpURLConnection c = (HttpURLConnection) new URL(HOLIDAYS_URL).openConnection();
-                c.setConnectTimeout(15000);
-                c.setReadTimeout(15000);
-                byte[] body;
-                try (InputStream in = c.getInputStream()) { body = readAll(in); }
-                new JSONObject(new String(body, "UTF-8")).getJSONObject("markets"); // only keep a good file
-                File tmp = new File(getFilesDir(), "holidays.json.tmp");
-                try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(body); }
-                if (tmp.renameTo(f)) runOnUiThread(() -> { loadHolidays(); refreshMarkets(); });
-            } catch (Exception ignored) { // offline or GitHub down: try again next time Home opens
-            } finally {
-                fetchingHolidays = false;
-            }
-        }).start();
-    }
-
-    private static byte[] readAll(InputStream in) throws java.io.IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buf = new byte[8192];
-        for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-        return out.toByteArray();
-    }
-
-    private void refreshMarkets() {
-        long now = System.currentTimeMillis();
-        for (int i = 0; i < marketStatus.size(); i++) {
-            MarketClock mk = MarketClock.ALL[i];
-            boolean open = mk.isOpen(now);
-            marketStatus.get(i).setText(mk.status(now));
-            TextView pill = marketPill.get(i);
-            pill.setText(open ? "Open" : "Closed");
-            pill.setTextColor(open ? 0xFF4ADE80 : 0xCCFFFFFF);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(open ? 0x334ADE80 : 0x26FFFFFF);
-            bg.setCornerRadius(px(100));
-            pill.setBackground(bg);
-        }
-    }
-
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -305,7 +194,7 @@ public class MainActivity extends Activity {
         scale = getResources().getDisplayMetrics().widthPixels / 1920f;
         showWallpaper(wallpaper());
 
-        ScrollView scroller = new ScrollView(this);
+        scroller = new ScrollView(this);
         scroller.setFillViewport(true);
         scroller.setVerticalScrollBarEnabled(false);
         scroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -314,15 +203,25 @@ public class MainActivity extends Activity {
         root.setClipChildren(false);
         scroller.addView(root, new FrameLayout.LayoutParams(-1, -2));
 
-        // Just the date: the market cards below carry the time.
+        // Just the date: the TV shows the time itself, and the market board fills the screen.
         shownLocale = java.util.Locale.getDefault();
         String day = Strings.datePattern();
         TextClock date = clock(day, day, px(30), 0xA8FFFFFF, regular);
         root.addView(date, at(px(MARGIN), px(92), -2, -2));
 
         addBranding();
-        loadHolidays();
-        addMarkets();
+        board = new MarketBoard(this, root, scale, regular, semibold);
+        // The board and the apps are a screen apart: whatever gets focus brings its whole part into view.
+        scroller.getViewTreeObserver().addOnGlobalFocusChangeListener((was, now) -> {
+            if (now == null || movingKey != null) return;
+            int[] at = new int[2], top = new int[2];
+            now.getLocationInWindow(at);
+            root.getLocationInWindow(top);
+            int y = at[1] - top[1];
+            if (y < px(MarketBoard.STRIP_TOP)) now.post(() -> scroller.smoothScrollTo(0, 0));
+            else if (y >= gridTop - px(ROW_STEP)) now.post(() -> scroller.smoothScrollTo(0,
+                    Math.max(scroller.getScrollY(), gridTop - px(MARGIN))));
+        });
 
         moveHint = text(px(24), 0xA8FFFFFF, regular);
         moveHint.setText(Strings.t("Use the arrows to move it, then press OK"));
@@ -338,7 +237,6 @@ public class MainActivity extends Activity {
         f.addDataScheme("package");
         if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(packagesChanged, f, Context.RECEIVER_EXPORTED);
         else registerReceiver(packagesChanged, f);
-        registerReceiver(minuteTick, new IntentFilter(Intent.ACTION_TIME_TICK));
 
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) try {
@@ -350,7 +248,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         unregisterReceiver(packagesChanged);
-        unregisterReceiver(minuteTick);
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) try { cm.unregisterNetworkCallback(networkChanged); } catch (Exception ignored) {}
         super.onDestroy();
@@ -361,6 +258,11 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         if (saveConfig(intent)) buildTiles();
+        // Home pressed on Home: back up to the market board.
+        if (movingKey == null && tile(NETWORK) != null) {
+            scroller.smoothScrollTo(0, 0);
+            tile(NETWORK).requestFocus();
+        }
     }
 
     // Saves an app list passed with --es apps "..." and shortcuts passed with --es quick "...".
@@ -421,10 +323,10 @@ public class MainActivity extends Activity {
             buildTiles();
         }
         refreshNetwork();
-        refreshMarkets();
-        refreshHolidays();
+        board.start();
+        // First focus goes to the network icon, so the page opens on the market board, not the apps.
         View f = getCurrentFocus();
-        if (f == null && !tiles.isEmpty()) tiles.get(0).requestFocus();
+        if (f == null && tile(NETWORK) != null) tile(NETWORK).requestFocus();
         HomeButton.onHomeResumed(this); // back on this home screen: Home comes here again
         // Only counted as opened once it has stayed up a moment, so a crash right after opening still
         // counts as a failed launch.
@@ -436,6 +338,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        board.stop();
         // Left normally (an app or Settings opened), so it didn't crash.
         getWindow().getDecorView().removeCallbacks(homeOk);
         HomeButton.onHomeOk(this);
@@ -623,6 +526,10 @@ public class MainActivity extends Activity {
             qx += ib + ig;
         }
         netIcon = addIcon(NETWORK, Strings.t("Network"), null, qx);
+        // The refresh countdown sits just left of the icons.
+        ((FrameLayout.LayoutParams) board.countdown.getLayoutParams()).rightMargin =
+                getResources().getDisplayMetrics().widthPixels - (qx - quick.size() * (ib + ig)) + px(8);
+        board.countdown.requestLayout();
         netState = -1;
         refreshNetwork();
 
