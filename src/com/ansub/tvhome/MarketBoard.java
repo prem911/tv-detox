@@ -47,6 +47,17 @@ import java.util.regex.Pattern;
 final class MarketBoard {
     private static final String NSE = "https://www.nseindia.in/api/NextApi/apiClient";
     private static final String GROWW = "https://groww.in/indices/global-indices";
+    // Dhan's Nifty 50 table (dhan.co/nifty-stocks-list/nifty-50) loads from this: all 50 in one call,
+    // with 52-week high and low, which NSE's constituents list doesn't have. No weights, so the grid
+    // keeps NSE's order. ponytail: unofficial, like the others.
+    private static final String DHAN = "https://ow-scanx-analytics.dhan.co/customscan/fetchdt";
+    private static final String DHAN_QUERY = "{\"data\":{\"sort\":\"Mcap\",\"sorder\":\"desc\",\"count\":50,\"pgno\":1,"
+            + "\"params\":[{\"field\":\"idxlist.Indexid\",\"op\":\"\",\"val\":\"13\"},"
+            + "{\"field\":\"Exch\",\"op\":\"\",\"val\":\"NSE\"},{\"field\":\"OgInst\",\"op\":\"\",\"val\":\"ES\"}],"
+            + "\"fields\":[\"Sym\",\"Ltp\",\"PPerchange\",\"High1Yr\",\"Low1Yr\",\"LastTradeTime\"]}}";
+    // Prices from Dhan first, NSE only if Dhan fails. Off until Dhan is seen updating during market
+    // hours; meanwhile NSE gives prices (Dhan as its backup) and Dhan the 52-week numbers once a day.
+    static final boolean DHAN_FIRST = false;
     // NSE drops connections that don't look like a browser.
     private static final String UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
             + "(KHTML, like Gecko) Chrome/130 Safari/537.36";
@@ -72,7 +83,7 @@ final class MarketBoard {
     private static final int CARD_W = 300, CARD_GAP = 16, SPEED = 40; // SPEED: strip scroll, px per second
 
     static final class Quote { double value, pct; long time; }
-    static final class Stock { String symbol; double weight, price, pct; }
+    static final class Stock { String symbol; double weight, price, pct, high52, low52; }
 
     private final Context ctx;
     private final float scale;
@@ -87,8 +98,11 @@ final class MarketBoard {
     private long nextFetch;
     private boolean running, fetching;
     private volatile boolean haveNifty; // fetched NSE at least once since Home started
+    private final Map<String, double[]> years = new HashMap<>(); // symbol -> 52-week {high, low}, from Dhan
+    private final Map<String, Double> weights = new HashMap<>(); // symbol -> index weight, from NSE
+    private volatile long yearsAt; // when the 52-week numbers were last fetched
     private final Map<String, Double> lastPrice = new HashMap<>(); // to flash the boxes that moved
-    private List<Stock> shown;
+    private volatile List<Stock> shown;
     // Testing only (install with --ez demo true): no network, about a dozen random prices move every 30s.
     private boolean demo;
 
@@ -181,7 +195,7 @@ final class MarketBoard {
             refreshHolidays();
             // NSE only while it trades, plus once at the start so a holiday still shows the last close.
             if (!haveNifty || nseLive(nseFrom, nseUntil, nseDays, System.currentTimeMillis())) {
-                try { stocks = nifty(); } catch (Exception ignored) {}
+                stocks = prices();
                 for (String[] s : STRIP) if (s[2].startsWith("nse:"))
                     try { got.put(s[1], nseIndex(s[2].substring(4))); } catch (Exception ignored) {}
             }
@@ -190,6 +204,9 @@ final class MarketBoard {
                 Map<String, Quote> world = groww();
                 for (String[] s : STRIP) if (world.containsKey(s[2])) got.put(s[1], world.get(s[2]));
             } catch (Exception ignored) {}
+            if (stocks == null && shown != null && System.currentTimeMillis() - yearsAt > 24L * 60 * 60 * 1000)
+                stocks = new ArrayList<>(shown); // market closed: still refresh the 52-week numbers daily
+            if (stocks != null) stocks = merge(stocks);
             final List<Stock> st = stocks;
             ui.post(() -> {
                 fetching = false;
@@ -260,6 +277,71 @@ final class MarketBoard {
 
     // ---- Sources ----
 
+    // On the fetch thread: the grid's prices from the primary source, the other as backup.
+    private List<Stock> prices() {
+        for (int i = 0; i < 2; i++) {
+            try {
+                if ((i == 0) == DHAN_FIRST) return keepYears(dhan());
+                List<Stock> l = nifty();
+                for (Stock s : l) weights.put(s.symbol, s.weight);
+                return l;
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private List<Stock> keepYears(List<Stock> l) {
+        for (Stock s : l) years.put(s.symbol, new double[] {s.high52, s.low52});
+        yearsAt = System.currentTimeMillis();
+        return l;
+    }
+
+    // On the fetch thread: add the 52-week numbers (refetched daily) and NSE's weight order.
+    private List<Stock> merge(List<Stock> l) {
+        if (System.currentTimeMillis() - yearsAt > 24L * 60 * 60 * 1000)
+            try { keepYears(dhan()); } catch (Exception ignored) {}
+        List<Stock> out = new ArrayList<>();
+        for (Stock o : l) {
+            Stock s = copy(o);
+            double[] y = years.get(s.symbol);
+            if (y != null) { s.high52 = Math.max(y[0], s.price); s.low52 = Math.min(y[1], s.price); }
+            Double w = weights.get(s.symbol);
+            if (w != null) s.weight = w;
+            out.add(s);
+        }
+        if (!weights.isEmpty()) java.util.Collections.sort(out, (x, y) -> Double.compare(y.weight, x.weight));
+        return out;
+    }
+
+    static List<Stock> dhan() throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(DHAN).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(15000);
+        c.setRequestProperty("User-Agent", UA);
+        c.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        c.setDoOutput(true);
+        try {
+            c.getOutputStream().write(DHAN_QUERY.getBytes("UTF-8"));
+            JSONArray a = new JSONObject(read(c.getInputStream())).getJSONArray("data");
+            List<Stock> out = new ArrayList<>();
+            for (int i = 0; i < a.length(); i++) { // already in market-cap order, close to index weight
+                JSONObject o = a.getJSONObject(i);
+                Stock s = new Stock();
+                s.symbol = o.getString("Sym");
+                s.weight = a.length() - i;
+                s.price = o.getDouble("Ltp");
+                s.pct = o.getDouble("PPerchange");
+                s.high52 = o.getDouble("High1Yr");
+                s.low52 = o.getDouble("Low1Yr");
+                out.add(s);
+            }
+            if (out.size() < 50) throw new Exception("short list: " + out.size());
+            return out;
+        } finally {
+            c.disconnect();
+        }
+    }
+
     static List<Stock> nifty() throws Exception {
         JSONArray a = new JSONObject(get(NSE + "/indexTrackerApi?functionName=getConstituents&&index=NIFTY%2050&&noofrecords=0"))
                 .getJSONArray("data");
@@ -323,13 +405,19 @@ final class MarketBoard {
         c.setConnectTimeout(15000);
         c.setReadTimeout(15000);
         c.setRequestProperty("User-Agent", UA);
-        try (InputStream in = c.getInputStream()) {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-            return out.toString("UTF-8");
+        try {
+            return read(c.getInputStream());
         } finally {
             c.disconnect();
+        }
+    }
+
+    private static String read(InputStream in) throws Exception {
+        try (InputStream i = in) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            for (int n; (n = i.read(buf)) > 0; ) out.write(buf, 0, n);
+            return out.toString("UTF-8");
         }
     }
 
@@ -457,16 +545,23 @@ final class MarketBoard {
         }
     }
 
+    private static Stock copy(Stock o) {
+        Stock s = new Stock();
+        s.symbol = o.symbol;
+        s.weight = o.weight;
+        s.price = o.price;
+        s.pct = o.pct;
+        s.high52 = o.high52;
+        s.low52 = o.low52;
+        return s;
+    }
+
     // Demo data: the shown stocks with about a dozen prices nudged up or down by up to 1%.
     private static List<Stock> jiggle(List<Stock> from) {
         java.util.Random r = new java.util.Random();
         List<Stock> out = new ArrayList<>();
         for (Stock o : from) {
-            Stock s = new Stock();
-            s.symbol = o.symbol;
-            s.weight = o.weight;
-            s.price = o.price;
-            s.pct = o.pct;
+            Stock s = copy(o);
             if (r.nextInt(4) == 0) {
                 double d = (r.nextDouble() * 2 - 1) / 100;
                 s.price = Math.round(o.price * (1 + d) * 20) / 20.0; // NSE ticks are 5 paise
@@ -489,7 +584,7 @@ final class MarketBoard {
 
     // Grid text, built into Android: condensed bold names (narrow, so they can be bigger) and medium
     // prices (regular is too thin against the colours from across a room).
-    private static final Typeface NAME_FONT = Typeface.create("sans-serif-condensed", Typeface.BOLD),
+    private final Typeface NAME_FONT = Typeface.create("sans-serif-condensed", Typeface.BOLD),
             PRICE_FONT = Typeface.create("sans-serif-medium", Typeface.NORMAL);
 
     // A small gap above each line under the name, so the three lines read apart.

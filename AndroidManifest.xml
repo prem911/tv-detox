@@ -5,7 +5,7 @@
     <!-- Only for the network tile: Wi-Fi, Ethernet or offline, and the Wi-Fi signal. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- Only for the market board: NSE and Groww quotes every 5 minutes while Home is in front, and NSE holidays once a day. -->
+    <!-- Only for the market board: NSE, Dhan and Groww quotes every 5 minutes while Home is in front, and NSE holidays once a day. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 11+ only shows apps a home screen asks to see: TV apps and normal apps. -->
     <queries>
