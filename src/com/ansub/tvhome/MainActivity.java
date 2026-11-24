@@ -111,7 +111,7 @@ public class MainActivity extends Activity {
             "com.android.tv.settings.device.displaysound.DisplaySoundActivity"};
     // Wallpapers, saved by name: a gradient top to bottom, then a glow from the top left and one from
     // the bottom right. Dark ones first, then bright ones that get darker towards the bottom, so the
-    // white labels stay easy to read. Only colours, no images, so every one costs the same as Dusk,
+    // white labels stay easy to read. Only colours, no images, so every one costs the same as Graphite,
     // the default.
     private static final String[] WALLPAPER_NAMES = {"Dusk", "Midnight", "Plum", "Forest", "Graphite", "Ocean", "Ember",
             "Sunset", "Lagoon", "Aurora", "Coral", "Iris", "Meadow", "Gold"};
@@ -407,7 +407,9 @@ public class MainActivity extends Activity {
     // The saved wallpaper, as an index into WALLPAPERS (Dusk if none is saved).
     private int wallpaper() {
         String saved = getSharedPreferences(PREFS, 0).getString("wallpaper", null);
-        return Math.max(0, Arrays.asList(WALLPAPER_NAMES).indexOf(saved));
+        int i = Arrays.asList(WALLPAPER_NAMES).indexOf(saved);
+        // Graphite by default: neutral grey keeps the market board's reds and greens true.
+        return i >= 0 ? i : Arrays.asList(WALLPAPER_NAMES).indexOf("Graphite");
     }
 
     private void showWallpaper(int i) {
