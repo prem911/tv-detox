@@ -19,12 +19,16 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -48,6 +52,11 @@ final class MarketBoard {
             + "(KHTML, like Gecko) Chrome/130 Safari/537.36";
     private static final long REFRESH = 5 * 60 * 1000, RETRY = 30 * 1000; // retry sooner when nothing came back
     private static final long OPEN_AGE = 20 * 60 * 1000; // a quote newer than this means its market is open
+    // NSE's trading days and hours (holidays/holidays.json in this repo, kept current by its GitHub
+    // Action). Outside them NSE isn't asked: its numbers can't change. Downloaded once a day.
+    private static final String HOLIDAYS_URL =
+            "https://raw.githubusercontent.com/prem911/tv-detox/main/holidays/holidays.json";
+    private static final int NSE_EARLY = 15, NSE_LATE = 15; // minutes polled before the open and after the close
 
     // Strip, east to west: flag, label, source ("nse:" index, "gift", or Groww's name), futures?
     private static final String[][] STRIP = {
@@ -83,6 +92,9 @@ final class MarketBoard {
     private final ValueAnimator scroll;
     private long nextFetch;
     private boolean running, fetching;
+    private volatile boolean haveNifty; // fetched NSE at least once since Home started
+    private volatile String nseFrom, nseUntil;
+    private volatile Map<String, String> nseDays;
 
     MarketBoard(Context ctx, FrameLayout root, float scale, Typeface regular, Typeface semibold) {
         this.ctx = ctx;
@@ -123,6 +135,7 @@ final class MarketBoard {
         FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
         cp.topMargin = px(46); // level with the network icon
         root.addView(countdown, cp);
+        loadHolidays();
     }
 
     // Home came to the front: catch up if a refresh is due, and start the clock and the strip.
@@ -157,9 +170,13 @@ final class MarketBoard {
             // Each source on its own, so one failing keeps the others (and its last good numbers).
             final Map<String, Quote> got = new HashMap<>();
             List<Stock> stocks = null;
-            try { stocks = nifty(); } catch (Exception ignored) {}
-            for (String[] s : STRIP) if (s[2].startsWith("nse:"))
-                try { got.put(s[1], nseIndex(s[2].substring(4))); } catch (Exception ignored) {}
+            refreshHolidays();
+            // NSE only while it trades, plus once at the start so a holiday still shows the last close.
+            if (!haveNifty || nseLive(nseFrom, nseUntil, nseDays, System.currentTimeMillis())) {
+                try { stocks = nifty(); } catch (Exception ignored) {}
+                for (String[] s : STRIP) if (s[2].startsWith("nse:"))
+                    try { got.put(s[1], nseIndex(s[2].substring(4))); } catch (Exception ignored) {}
+            }
             try { got.put("GIFT NIFTY", gift()); } catch (Exception ignored) {}
             try {
                 Map<String, Quote> world = groww();
@@ -171,9 +188,66 @@ final class MarketBoard {
                 if (st == null && got.isEmpty()) nextFetch = System.currentTimeMillis() + RETRY;
                 quotes.putAll(got);
                 showStrip();
-                if (st != null) showGrid(st);
+                if (st != null) {
+                    haveNifty = true;
+                    showGrid(st);
+                }
             });
         }).start();
+    }
+
+    // ---- Trading hours ----
+
+    // Should NSE be asked now? Not on holidays and weekends, nor outside the session (with a margin
+    // either side). Without a calendar for today (not downloaded yet, or past its end), yes.
+    static boolean nseLive(String from, String until, Map<String, String> days, long now) {
+        Calendar c = Calendar.getInstance(TimeZone.getTimeZone("Asia/Kolkata"), Locale.US);
+        c.setTimeInMillis(now);
+        String day = String.format(Locale.US, "%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1,
+                c.get(Calendar.DAY_OF_MONTH));
+        if (days == null || day.compareTo(from) < 0 || day.compareTo(until) > 0) return true;
+        String v = days.get(day);
+        if (v == null) return false; // a holiday or weekend
+        int m = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE);
+        for (String part : v.split(",")) { // "0915-1530", or several for markets with a lunch break
+            int open = Integer.parseInt(part.substring(0, 2)) * 60 + Integer.parseInt(part.substring(2, 4));
+            int close = Integer.parseInt(part.substring(5, 7)) * 60 + Integer.parseInt(part.substring(7, 9));
+            if (m >= open - NSE_EARLY && m <= close + NSE_LATE) return true;
+        }
+        return false;
+    }
+
+    private File holidaysFile() { return new File(ctx.getFilesDir(), "holidays.json"); }
+
+    private void loadHolidays() {
+        try (InputStream in = new FileInputStream(holidaysFile())) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+            JSONObject nse = new JSONObject(out.toString("UTF-8")).getJSONObject("markets").getJSONObject("NSE");
+            JSONObject d = nse.getJSONObject("days");
+            Map<String, String> days = new HashMap<>();
+            for (java.util.Iterator<String> it = d.keys(); it.hasNext(); ) {
+                String k = it.next();
+                days.put(k, d.getString(k));
+            }
+            nseFrom = nse.getString("from");
+            nseUntil = nse.getString("until");
+            nseDays = days;
+        } catch (Exception ignored) {} // not downloaded yet, or unreadable: NSE is polled all the time
+    }
+
+    // On the fetch thread: download a fresh calendar once a day, keeping the last good one on failure.
+    private void refreshHolidays() {
+        File f = holidaysFile();
+        if (System.currentTimeMillis() - f.lastModified() < 24L * 60 * 60 * 1000) return;
+        try {
+            String body = get(HOLIDAYS_URL);
+            new JSONObject(body).getJSONObject("markets").getJSONObject("NSE"); // only keep a good file
+            File tmp = new File(ctx.getFilesDir(), "holidays.json.tmp");
+            try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(body.getBytes("UTF-8")); }
+            if (tmp.renameTo(f)) loadHolidays();
+        } catch (Exception ignored) {} // offline or GitHub down: tried again at the next refresh
     }
 
     // ---- Sources ----
