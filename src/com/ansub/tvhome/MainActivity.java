@@ -102,7 +102,7 @@ public class MainActivity extends Activity {
     // The apps sit below the market board, one screen down: Down from the top row scrolls to them.
     private static final int ROW1_TOP = MarketBoard.BOTTOM + MARGIN, ROW_STEP = 224;
     private static final int GRID_MIN_TOP = ROW1_TOP;
-    private static final int ICON_TOP = 76, ICON_BUTTON = 72, ICON_SIZE = 40, ICON_GAP = 12; // level with the date
+    private static final int ICON_TOP = 28, ICON_BUTTON = 72, ICON_SIZE = 40, ICON_GAP = 12; // level with the date
 
     // The Settings tile opens a small menu: the home screen's own settings, then the TV's.
     private static final String[] SETTINGS_ITEMS = {"Wallpaper", "Brightness", "TV settings"};
@@ -207,7 +207,7 @@ public class MainActivity extends Activity {
         shownLocale = java.util.Locale.getDefault();
         String day = Strings.datePattern();
         TextClock date = clock(day, day, px(30), 0xA8FFFFFF, regular);
-        root.addView(date, at(px(MARGIN), px(92), -2, -2));
+        root.addView(date, at(px(MARGIN), px(ICON_TOP + 16), -2, -2));
 
         addBranding();
         board = new MarketBoard(this, root, scale, regular, semibold);

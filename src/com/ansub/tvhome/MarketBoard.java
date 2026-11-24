@@ -65,7 +65,7 @@ final class MarketBoard {
         "NESTLE|IND", "EICHER|MOT", "HDFC|LIFE", "APOLLO|HOSP", "TATA|CONSUM", "MAX|HEALTH", "ADANI|ENT", "DR|REDDY"};
     private static final int COLS = 10;
     // Layout, designed at 1920x1080 like the rest of the page.
-    static final int STRIP_TOP = 168, STRIP_H = 84, GRID_TOP = 268, BOTTOM = 1080;
+    static final int STRIP_TOP = 116, STRIP_H = 84, GRID_TOP = 212, BOTTOM = 1080;
     private static final int CARD_W = 300, CARD_GAP = 16, SPEED = 40; // SPEED: strip scroll, px per second
 
     static final class Quote { double value, pct; long time; }
@@ -121,7 +121,7 @@ final class MarketBoard {
         countdown = text(px(26), 0xA8FFFFFF, regular);
         countdown.setFontFeatureSettings("tnum");
         FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
-        cp.topMargin = px(94);
+        cp.topMargin = px(46); // level with the network icon
         root.addView(countdown, cp);
     }
 
