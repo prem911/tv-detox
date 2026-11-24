@@ -39,7 +39,8 @@ import java.util.regex.Pattern;
 
 // The market board on the home screen: a scrolling strip of world indices and a Nifty 50 grid, one
 // equal box per stock in index-weight order, coloured by the day's change. Refreshed every 5 minutes
-// while Home is in front, with a countdown to the next refresh.
+// while Home is in front. Each box has a triangle along its bottom: where today's price sits
+// between its 52-week low (left) and high (right). A 24-hour clock sits top right.
 //
 // ponytail: both sources are the websites' own data, not published APIs. NSE's index-tracker page
 // calls the JSON endpoints below; Groww's global-indices page embeds its quotes in __NEXT_DATA__.
@@ -90,7 +91,7 @@ final class MarketBoard {
     private final Typeface regular, semibold;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final FrameLayout grid;
-    final TextView countdown;
+    final android.widget.TextClock clock;
     // Each strip label has two cards: the strip holds two copies of itself so it loops without a gap.
     private final Map<String, List<View>> cards = new HashMap<>();
     private final Map<String, Quote> quotes = new HashMap<>();
@@ -147,11 +148,16 @@ final class MarketBoard {
         grid.setBackgroundColor(0xFF050405);
         root.addView(grid, at(0, px(GRID_TOP), width, px(BOTTOM - GRID_TOP)));
 
-        countdown = text(px(26), 0xA8FFFFFF, regular);
-        countdown.setFontFeatureSettings("tnum");
+        clock = new android.widget.TextClock(ctx); // 24-hour, in the date's size and grey
+        clock.setFormat12Hour("HH:mm");
+        clock.setFormat24Hour("HH:mm");
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_PX, px(30));
+        clock.setTextColor(0xA8FFFFFF);
+        clock.setTypeface(regular);
+        clock.setFontFeatureSettings("tnum");
         FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
-        cp.topMargin = px(46); // level with the network icon
-        root.addView(countdown, cp);
+        cp.topMargin = px(44); // level with the date
+        root.addView(clock, cp);
         loadHolidays();
     }
 
@@ -174,8 +180,6 @@ final class MarketBoard {
         @Override public void run() {
             long left = nextFetch - System.currentTimeMillis();
             if (left <= 0 && !fetching) fetch();
-            long s = Math.max(0, left + 999) / 1000;
-            countdown.setText(String.format(Locale.US, "↻ %d:%02d", s / 60, s % 60));
             if (running) ui.postDelayed(this, 1000);
         }
     };
@@ -525,10 +529,30 @@ final class MarketBoard {
             pct.setGravity(Gravity.CENTER);
             cell.addView(pct, spaced());
             grid.addView(cell, at(x, y, cw, ch));
+            if (s.high52 > s.low52) { // 52-week position: left edge = low, right edge = high
+                int tw = px(24), th = px(16), inset = px(14);
+                double t = (s.price - s.low52) / (s.high52 - s.low52);
+                int tx = x + inset + (int) Math.round(t * (cw - 2 * inset)) - tw / 2;
+                grid.addView(triangle(), at(tx, y + ch - px(23), tw, th));
+            }
             Double was = lastPrice.put(s.symbol, s.price);
             if (was != null && was != s.price) flash(cell, s.price > was, heat, price, pct);
         }
         shown = stocks;
+    }
+
+    private View triangle() {
+        android.graphics.Path p = new android.graphics.Path();
+        p.moveTo(0.5f, 0);
+        p.lineTo(1, 1);
+        p.lineTo(0, 1);
+        p.close();
+        android.graphics.drawable.ShapeDrawable d =
+                new android.graphics.drawable.ShapeDrawable(new android.graphics.drawable.shapes.PathShape(p, 1, 1));
+        d.getPaint().setColor(0xC8FFFFFF);
+        View v = new View(ctx);
+        v.setBackground(d);
+        return v;
     }
 
     // A box whose price moved lights up pale green (up) or pale red (down), then fades back to its

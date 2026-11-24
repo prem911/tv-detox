@@ -172,7 +172,7 @@ public class MainActivity extends Activity {
         }
     };
 
-    // World market clocks: each card's Open/Closed pill and countdown, refreshed every minute.
+    // The market board: world indices strip, Nifty 50 grid and the clock.
     private MarketBoard board;
     private ScrollView scroller;
 
@@ -203,7 +203,7 @@ public class MainActivity extends Activity {
         root.setClipChildren(false);
         scroller.addView(root, new FrameLayout.LayoutParams(-1, -2));
 
-        // Just the date: the TV shows the time itself, and the market board fills the screen.
+        // The date; the market board puts the time top right.
         shownLocale = java.util.Locale.getDefault();
         String day = Strings.datePattern();
         TextClock date = clock(day, day, px(30), 0xA8FFFFFF, regular);
@@ -529,10 +529,10 @@ public class MainActivity extends Activity {
             qx += ib + ig;
         }
         netIcon = addIcon(NETWORK, Strings.t("Network"), null, qx);
-        // The refresh countdown sits just left of the icons.
-        ((FrameLayout.LayoutParams) board.countdown.getLayoutParams()).rightMargin =
+        // The clock sits just left of the icons.
+        ((FrameLayout.LayoutParams) board.clock.getLayoutParams()).rightMargin =
                 getResources().getDisplayMetrics().widthPixels - (qx - quick.size() * (ib + ig)) + px(8);
-        board.countdown.requestLayout();
+        board.clock.requestLayout();
         netState = -1;
         refreshNetwork();
 
