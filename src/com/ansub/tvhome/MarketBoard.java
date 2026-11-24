@@ -405,7 +405,7 @@ final class MarketBoard {
         DecimalFormat whole = new DecimalFormat("#,##0");
         // One size for every name: the widest symbol just fits its box on one line.
         Paint paint = new Paint();
-        paint.setTypeface(semibold);
+        paint.setTypeface(NAME_FONT);
         paint.setTextSize(px(100));
         float widest = 1;
         for (Stock s : stocks) widest = Math.max(widest, paint.measureText(s.symbol));
@@ -421,21 +421,21 @@ final class MarketBoard {
             cell.setGravity(Gravity.CENTER);
             int heat = shade(s.pct);
             cell.setBackgroundColor(heat);
-            TextView name = text(Math.round(nameSize), 0xFFFFFFFF, semibold);
+            TextView name = text(Math.round(nameSize), 0xFFFFFFFF, NAME_FONT);
             name.setGravity(Gravity.CENTER);
             name.setSingleLine(true);
             name.setText(s.symbol);
             cell.addView(name);
-            TextView price = text(px(26), 0xEBFFFFFF, regular);
+            TextView price = text(px(26), 0xFFFFFFFF, PRICE_FONT);
             price.setText(whole.format(s.price));
             price.setFontFeatureSettings("tnum");
             price.setGravity(Gravity.CENTER);
-            cell.addView(price);
+            cell.addView(price, spaced());
             TextView pct = text(px(28), 0xFFFFFFFF, semibold);
             pct.setText(String.format(Locale.US, "%s%.2f%%", s.pct >= 0 ? "+" : "−", Math.abs(s.pct)));
             pct.setFontFeatureSettings("tnum");
             pct.setGravity(Gravity.CENTER);
-            cell.addView(pct);
+            cell.addView(pct, spaced());
             grid.addView(cell, at(x, y, cw, ch));
             Double was = lastPrice.put(s.symbol, s.price);
             if (was != null && was != s.price) flash(cell, s.price > was, heat, price, pct);
@@ -478,12 +478,25 @@ final class MarketBoard {
     }
 
     // Grey at 0%, full red or green at ±3% and beyond.
+    // The full colours are kept a little dark so white text stays at 5:1 contrast or better.
     static int shade(double pct) {
         double t = 0.25 + 0.75 * Math.min(Math.abs(pct) / 3, 1);
-        int[] end = pct >= 0 ? new int[] {16, 150, 72} : new int[] {222, 52, 64}, base = {38, 38, 42};
+        int[] end = pct >= 0 ? new int[] {14, 138, 67} : new int[] {200, 48, 62}, base = {38, 38, 42};
         int r = (int) Math.round(base[0] + (end[0] - base[0]) * t), g = (int) Math.round(base[1] + (end[1] - base[1]) * t),
             b = (int) Math.round(base[2] + (end[2] - base[2]) * t);
         return 0xFF000000 | r << 16 | g << 8 | b;
+    }
+
+    // Grid text, built into Android: condensed bold names (narrow, so they can be bigger) and medium
+    // prices (regular is too thin against the colours from across a room).
+    private static final Typeface NAME_FONT = Typeface.create("sans-serif-condensed", Typeface.BOLD),
+            PRICE_FONT = Typeface.create("sans-serif-medium", Typeface.NORMAL);
+
+    // A small gap above each line under the name, so the three lines read apart.
+    private LinearLayout.LayoutParams spaced() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = px(5);
+        return lp;
     }
 
     private TextView text(int size, int color, Typeface tf) {
