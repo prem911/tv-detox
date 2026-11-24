@@ -537,19 +537,19 @@ final class MarketBoard {
             LinearLayout cell = new LinearLayout(ctx);
             cell.setOrientation(LinearLayout.VERTICAL);
             cell.setGravity(Gravity.CENTER);
-            int heat = shade(s.pct, CAPS[setting(2)]);
+            int heat = shade(s.pct, CAPS[setting(2)]), ink = ink(heat);
             cell.setBackgroundColor(heat);
-            TextView name = text(Math.round(nameSize), 0xFFFFFFFF, NAME_FONT);
+            TextView name = text(Math.round(nameSize), ink, NAME_FONT);
             name.setGravity(Gravity.CENTER);
             name.setSingleLine(true);
             name.setText(s.symbol);
             cell.addView(name);
-            TextView price = text(px(26), 0xFFFFFFFF, PRICE_FONT);
+            TextView price = text(px(26), ink, PRICE_FONT);
             price.setText(whole.format(s.price));
             price.setFontFeatureSettings("tnum");
             price.setGravity(Gravity.CENTER);
             cell.addView(price, spaced());
-            TextView pct = text(px(28), 0xFFFFFFFF, semibold);
+            TextView pct = text(px(28), ink, semibold);
             pct.setText(String.format(Locale.US, "%s%.2f%%", s.pct >= 0 ? "+" : "−", Math.abs(s.pct)));
             pct.setFontFeatureSettings("tnum");
             pct.setGravity(Gravity.CENTER);
@@ -559,7 +559,7 @@ final class MarketBoard {
                 int tw = px(24), th = px(16), inset = px(14);
                 double t = (s.price - s.low52) / (s.high52 - s.low52);
                 int tx = x + inset + (int) Math.round(t * (cw - 2 * inset)) - tw / 2;
-                grid.addView(triangle(), at(tx, y + ch - px(23), tw, th));
+                grid.addView(triangle(ink & 0xC8FFFFFF), at(tx, y + ch - px(23), tw, th));
             }
             Double was = lastPrice.put(s.symbol, s.price);
             if (was != null && was != s.price) flash(cell, s.price > was, heat, price, pct);
@@ -567,7 +567,7 @@ final class MarketBoard {
         shown = stocks;
     }
 
-    private View triangle() {
+    private View triangle(int colour) {
         android.graphics.Path p = new android.graphics.Path();
         p.moveTo(0.5f, 0);
         p.lineTo(1, 1);
@@ -575,16 +575,16 @@ final class MarketBoard {
         p.close();
         android.graphics.drawable.ShapeDrawable d =
                 new android.graphics.drawable.ShapeDrawable(new android.graphics.drawable.shapes.PathShape(p, 1, 1));
-        d.getPaint().setColor(0xC8FFFFFF);
+        d.getPaint().setColor(colour);
         View v = new View(ctx);
         v.setBackground(d);
         return v;
     }
 
-    // A box whose price moved lights up pale green (up) or pale red (down), then fades back to its
+    // A box whose price moved lights up bright green (up) or bright red (down), then fades back to its
     // heat colour, while its price and change pop: easy to spot from across the room.
     private static void flash(View cell, boolean up, int heat, View... pop) {
-        ValueAnimator a = ValueAnimator.ofArgb(up ? 0xFFA8F0C4 : 0xFFFFB3BB, heat);
+        ValueAnimator a = ValueAnimator.ofArgb(up ? 0xFF3DDC84 : 0xFFFF4D5E, heat);
         a.setDuration(1500);
         a.addUpdateListener(v -> cell.setBackgroundColor((Integer) v.getAnimatedValue()));
         a.start();
@@ -622,14 +622,38 @@ final class MarketBoard {
         return out;
     }
 
-    // Grey at 0%, full red or green at ±cap% (3 unless changed in Settings) and beyond.
-    // The full colours are kept a little dark so white text stays at 5:1 contrast or better.
+    // Light red or green for a small move, deepening to full at ±cap% (3 unless changed in Settings):
+    // the darker the box, the bigger the move.
     static int shade(double pct, double cap) {
-        double t = 0.25 + 0.75 * Math.min(Math.abs(pct) / cap, 1);
-        int[] end = pct >= 0 ? new int[] {14, 138, 67} : new int[] {200, 48, 62}, base = {38, 38, 42};
-        int r = (int) Math.round(base[0] + (end[0] - base[0]) * t), g = (int) Math.round(base[1] + (end[1] - base[1]) * t),
-            b = (int) Math.round(base[2] + (end[2] - base[2]) * t);
-        return 0xFF000000 | r << 16 | g << 8 | b;
+        int[] from = pct >= 0 ? new int[] {190, 236, 202} : new int[] {255, 196, 200},
+              to = pct >= 0 ? new int[] {8, 92, 46} : new int[] {140, 16, 32};
+        // Mid shades too light for white text and too dark for black are skipped: one step deeper.
+        for (double t = Math.min(Math.abs(pct) / cap, 1); ; t = Math.min(t + 0.01, 1)) {
+            int r = (int) Math.round(from[0] + (to[0] - from[0]) * t), g = (int) Math.round(from[1] + (to[1] - from[1]) * t),
+                b = (int) Math.round(from[2] + (to[2] - from[2]) * t);
+            int c = 0xFF000000 | r << 16 | g << 8 | b;
+            if (t >= 1 || contrast(ink(c), c) >= 4.5) return c;
+        }
+    }
+
+    // Text on a box: white or near-black, whichever reads better (near-black on the light boxes).
+    static int ink(int bg) {
+        return contrast(0xFFFFFFFF, bg) >= contrast(0xFF181416, bg) ? 0xFFFFFFFF : 0xFF181416;
+    }
+
+    static double contrast(int a, int b) {
+        double x = luminance(a), y = luminance(b);
+        return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+    }
+
+    private static double luminance(int c) {
+        double l = 0;
+        double[] w = {0.2126, 0.7152, 0.0722};
+        for (int i = 0; i < 3; i++) {
+            double v = (c >> (16 - 8 * i) & 0xFF) / 255.0;
+            l += w[i] * (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+        }
+        return l;
     }
 
     // Grid text, built into Android: condensed bold names (narrow, so they can be bigger) and medium

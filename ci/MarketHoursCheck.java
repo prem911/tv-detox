@@ -25,6 +25,12 @@ public class MarketHoursCheck {
         days.put("2026-11-26", "0900-1130,1230-1530");
         check(false, MarketBoard.nseLive(from, until, days, ist("2026-11-26 12:00")), "lunch break");
         check(true, MarketBoard.nseLive(from, until, days, ist("2026-11-26 12:20")), "just before the afternoon");
+        // Every box's text reads at 4.5:1 or better, for any move and every colour cap.
+        for (double cap : new double[] {2, 3, 5})
+            for (double pct = -6; pct <= 6; pct += 0.01) {
+                int bg = MarketBoard.shade(pct, cap);
+                check(true, MarketBoard.contrast(MarketBoard.ink(bg), bg) >= 4.5, "text contrast at " + pct + "%, cap " + cap);
+            }
         System.out.println("ok");
     }
 
