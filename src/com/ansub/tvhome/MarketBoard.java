@@ -66,12 +66,6 @@ final class MarketBoard {
         {"🇬🇧", "FTSE 100", "FTSE 100", ""}, {"🇺🇸", "DOW FUT", "Dow Futures", "fut"},
         {"🇺🇸", "DOW JONES", "Dow", ""}, {"🇺🇸", "S&P 500", "S&P", ""},
     };
-    // Where a long NSE symbol may go onto two lines; it only does if it doesn't fit on one.
-    // A symbol that doesn't fit and isn't listed gets smaller instead.
-    private static final String[] BREAKS = {"HDFC|BANK", "ICICI|BANK", "BHARTI|ARTL", "AXIS|BANK", "KOTAK|BANK",
-        "BAJ|FINANCE", "HIND|UNILVR", "SUN|PHARMA", "ULTRA|CEMCO", "TATA|STEEL", "POWER|GRID", "ADANI|PORTS",
-        "BAJAJ|FINSV", "JSW|STEEL", "ASIAN|PAINT", "HIND|ALCO", "COAL|INDIA", "BAJAJ-|AUTO", "SHRIRAM|FIN",
-        "NESTLE|IND", "EICHER|MOT", "HDFC|LIFE", "APOLLO|HOSP", "TATA|CONSUM", "MAX|HEALTH", "ADANI|ENT", "DR|REDDY"};
     private static final int COLS = 10;
     // Layout, designed at 1920x1080 like the rest of the page.
     static final int STRIP_TOP = 116, STRIP_H = 84, GRID_TOP = 212, BOTTOM = 1080;
@@ -409,6 +403,13 @@ final class MarketBoard {
         int w = grid.getLayoutParams().width, h = grid.getLayoutParams().height, gap = Math.max(1, px(3));
         int rows = (stocks.size() + COLS - 1) / COLS;
         DecimalFormat whole = new DecimalFormat("#,##0");
+        // One size for every name: the widest symbol just fits its box on one line.
+        Paint paint = new Paint();
+        paint.setTypeface(semibold);
+        paint.setTextSize(px(100));
+        float widest = 1;
+        for (Stock s : stocks) widest = Math.max(widest, paint.measureText(s.symbol));
+        float nameSize = Math.min(px(40), px(100) * (w / COLS - gap - px(16)) / widest);
         for (int i = 0; i < stocks.size(); i++) {
             Stock s = stocks.get(i);
             int c = i % COLS, r = i / COLS;
@@ -420,10 +421,10 @@ final class MarketBoard {
             cell.setGravity(Gravity.CENTER);
             int heat = shade(s.pct);
             cell.setBackgroundColor(heat);
-            TextView name = text(px(31), 0xFFFFFFFF, semibold);
+            TextView name = text(Math.round(nameSize), 0xFFFFFFFF, semibold);
             name.setGravity(Gravity.CENTER);
-            name.setLineSpacing(0, 0.95f);
-            fitName(name, s.symbol, cw - px(12));
+            name.setSingleLine(true);
+            name.setText(s.symbol);
             cell.addView(name);
             TextView price = text(px(26), 0xEBFFFFFF, regular);
             price.setText(whole.format(s.price));
@@ -474,20 +475,6 @@ final class MarketBoard {
             out.add(s);
         }
         return out;
-    }
-
-    // One line if it fits; else two at its break; else one line, smaller.
-    private static void fitName(TextView t, String symbol, int room) {
-        Paint p = t.getPaint();
-        if (p.measureText(symbol) > room) {
-            for (String b : BREAKS)
-                if (b.replace("|", "").equals(symbol)) {
-                    t.setText(b.replace("|", "\n"));
-                    return;
-                }
-            t.setTextSize(TypedValue.COMPLEX_UNIT_PX, t.getTextSize() * room / p.measureText(symbol));
-        }
-        t.setText(symbol);
     }
 
     // Grey at 0%, full red or green at ±3% and beyond.
