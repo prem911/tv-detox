@@ -93,6 +93,15 @@ final class MarketBoard {
     private long nextFetch;
     private boolean running, fetching;
     private volatile boolean haveNifty; // fetched NSE at least once since Home started
+    private final Map<String, Double> lastPrice = new HashMap<>(); // to flash the boxes that moved
+    private List<Stock> shown;
+    // Testing only (install with --ez demo true): no network, about a dozen random prices move every 30s.
+    private boolean demo;
+
+    void setDemo(boolean on) {
+        demo = on;
+        nextFetch = System.currentTimeMillis() + (on ? 30 * 1000 : 0); // off: real numbers right away
+    }
     private volatile String nseFrom, nseUntil;
     private volatile Map<String, String> nseDays;
 
@@ -164,6 +173,11 @@ final class MarketBoard {
     };
 
     private void fetch() {
+        if (demo && shown != null) {
+            nextFetch = System.currentTimeMillis() + 30 * 1000;
+            showGrid(jiggle(shown));
+            return;
+        }
         fetching = true;
         nextFetch = System.currentTimeMillis() + REFRESH;
         new Thread(() -> {
@@ -404,7 +418,8 @@ final class MarketBoard {
             LinearLayout cell = new LinearLayout(ctx);
             cell.setOrientation(LinearLayout.VERTICAL);
             cell.setGravity(Gravity.CENTER);
-            cell.setBackgroundColor(shade(s.pct));
+            int heat = shade(s.pct);
+            cell.setBackgroundColor(heat);
             TextView name = text(px(31), 0xFFFFFFFF, semibold);
             name.setGravity(Gravity.CENTER);
             name.setLineSpacing(0, 0.95f);
@@ -421,7 +436,44 @@ final class MarketBoard {
             pct.setGravity(Gravity.CENTER);
             cell.addView(pct);
             grid.addView(cell, at(x, y, cw, ch));
+            Double was = lastPrice.put(s.symbol, s.price);
+            if (was != null && was != s.price) flash(cell, s.price > was, heat, price, pct);
         }
+        shown = stocks;
+    }
+
+    // A box whose price moved lights up pale green (up) or pale red (down), then fades back to its
+    // heat colour, while its price and change pop: easy to spot from across the room.
+    private static void flash(View cell, boolean up, int heat, View... pop) {
+        ValueAnimator a = ValueAnimator.ofArgb(up ? 0xFFA8F0C4 : 0xFFFFB3BB, heat);
+        a.setDuration(1500);
+        a.addUpdateListener(v -> cell.setBackgroundColor((Integer) v.getAnimatedValue()));
+        a.start();
+        for (View v : pop) {
+            v.setScaleX(1.25f);
+            v.setScaleY(1.25f);
+            v.animate().scaleX(1f).scaleY(1f).setDuration(700).start();
+        }
+    }
+
+    // Demo data: the shown stocks with about a dozen prices nudged up or down by up to 1%.
+    private static List<Stock> jiggle(List<Stock> from) {
+        java.util.Random r = new java.util.Random();
+        List<Stock> out = new ArrayList<>();
+        for (Stock o : from) {
+            Stock s = new Stock();
+            s.symbol = o.symbol;
+            s.weight = o.weight;
+            s.price = o.price;
+            s.pct = o.pct;
+            if (r.nextInt(4) == 0) {
+                double d = (r.nextDouble() * 2 - 1) / 100;
+                s.price = Math.round(o.price * (1 + d) * 20) / 20.0; // NSE ticks are 5 paise
+                s.pct = ((1 + o.pct / 100) * s.price / o.price - 1) * 100;
+            }
+            out.add(s);
+        }
+        return out;
     }
 
     // One line if it fits; else two at its break; else one line, smaller.

@@ -258,6 +258,7 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         if (saveConfig(intent)) buildTiles();
+        if (intent.hasExtra("demo")) board.setDemo(intent.getBooleanExtra("demo", false));
         // Home pressed on Home: back up to the market board.
         if (movingKey == null && tile(NETWORK) != null) {
             scroller.smoothScrollTo(0, 0);
