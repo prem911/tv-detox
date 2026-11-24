@@ -110,12 +110,18 @@ public class MainActivity extends Activity {
     private static final String[] TV_DISPLAY_SOUND = {"com.android.tv.settings",
             "com.android.tv.settings.device.displaysound.DisplaySoundActivity"};
     // Wallpapers, saved by name: a gradient top to bottom, then a glow from the top left and one from
-    // the bottom right. Dark ones first, then bright ones that get darker towards the bottom, so the
-    // white labels stay easy to read. Only colours, no images, so every one costs the same as Graphite,
-    // the default.
-    private static final String[] WALLPAPER_NAMES = {"Dusk", "Midnight", "Plum", "Forest", "Graphite", "Ocean", "Ember",
+    // the bottom right. Flat colours first (Black is the default), then dark gradients, then bright ones
+    // that get darker towards the bottom, so the white labels stay easy to read. Only colours, no
+    // images, so every one costs the same.
+    private static final String[] WALLPAPER_NAMES = {"Black", "Charcoal", "Slate", "Navy", "Teal", "Maroon", "Olive",
+            "Dusk", "Midnight", "Plum", "Forest", "Graphite", "Ocean", "Ember",
             "Sunset", "Lagoon", "Aurora", "Coral", "Iris", "Meadow", "Gold"};
     private static final int[][] WALLPAPERS = {
+        // Flat colours first, dark enough for white text: no gradient, no glow.
+        {0xFF000000, 0xFF000000, 0xFF000000, 0, 0}, {0xFF1C1C1E, 0xFF1C1C1E, 0xFF1C1C1E, 0, 0},
+        {0xFF1E2530, 0xFF1E2530, 0xFF1E2530, 0, 0}, {0xFF0B1530, 0xFF0B1530, 0xFF0B1530, 0, 0},
+        {0xFF06282B, 0xFF06282B, 0xFF06282B, 0, 0}, {0xFF2A0A10, 0xFF2A0A10, 0xFF2A0A10, 0, 0},
+        {0xFF1E2210, 0xFF1E2210, 0xFF1E2210, 0, 0},
         {0xFF15100F, 0xFF0A0809, 0xFF050405, 0x36FF8048, 0x2EAA3C8C},
         {0xFF0E1220, 0xFF080A13, 0xFF040509, 0x384A6CFF, 0x2E5A3CC8},
         {0xFF170E19, 0xFF0C070D, 0xFF050306, 0x38C050B4, 0x2E6440D2},
@@ -405,12 +411,12 @@ public class MainActivity extends Activity {
         return new LayerDrawable(new Drawable[] {base, top, bottom});
     }
 
-    // The saved wallpaper, as an index into WALLPAPERS (Dusk if none is saved).
+    // The saved wallpaper, as an index into WALLPAPERS (Black if none is saved).
     private int wallpaper() {
         String saved = getSharedPreferences(PREFS, 0).getString("wallpaper", null);
         int i = Arrays.asList(WALLPAPER_NAMES).indexOf(saved);
-        // Graphite by default: neutral grey keeps the market board's reds and greens true.
-        return i >= 0 ? i : Arrays.asList(WALLPAPER_NAMES).indexOf("Graphite");
+        // Flat black by default: keeps the market board's reds and greens true.
+        return i >= 0 ? i : Arrays.asList(WALLPAPER_NAMES).indexOf("Black");
     }
 
     private void showWallpaper(int i) {
