@@ -104,9 +104,10 @@ final class MarketBoard {
                 if (l == null) cards.put(s[1], l = new ArrayList<>());
                 l.add(card);
             }
-        strip.addView(row, new FrameLayout.LayoutParams(-2, -1));
-        root.addView(strip, at(0, px(STRIP_TOP), width, px(STRIP_H)));
         int loop = STRIP.length * px(CARD_W + CARD_GAP);
+        // Its full width, not the screen's: cards past the edge must be laid out to scroll in.
+        strip.addView(row, new FrameLayout.LayoutParams(px(48) + 2 * loop, -1));
+        root.addView(strip, at(0, px(STRIP_TOP), width, px(STRIP_H)));
         scroll = ValueAnimator.ofFloat(0, -loop);
         scroll.setDuration(loop * 1000L / px(SPEED));
         scroll.setInterpolator(new LinearInterpolator());
@@ -338,10 +339,12 @@ final class MarketBoard {
             TextView price = text(px(26), 0xEBFFFFFF, regular);
             price.setText(whole.format(s.price));
             price.setFontFeatureSettings("tnum");
+            price.setGravity(Gravity.CENTER);
             cell.addView(price);
             TextView pct = text(px(28), 0xFFFFFFFF, semibold);
             pct.setText(String.format(Locale.US, "%s%.2f%%", s.pct >= 0 ? "+" : "−", Math.abs(s.pct)));
             pct.setFontFeatureSettings("tnum");
+            pct.setGravity(Gravity.CENTER);
             cell.addView(pct);
             grid.addView(cell, at(x, y, cw, ch));
         }
