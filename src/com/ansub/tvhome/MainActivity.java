@@ -76,7 +76,7 @@ public class MainActivity extends Activity {
     // it there, off until picked the same way:
     //   --es quick "bluetooth,sound,picture"
     // (--es quick none  takes them away again; "wifi" and "ethernet" are the network tile now).
-    private static final String PREFS = "config";
+    static final String PREFS = "config";
     private static final List<String> NOT_APPS = Arrays.asList("com.android.vending", "com.android.tv.settings",
             "com.android.tv", "com.google.android.tvlauncher", "com.google.android.apps.tv.launcherx",
             "com.google.android.leanbacklauncher");
@@ -105,7 +105,7 @@ public class MainActivity extends Activity {
     private static final int ICON_TOP = 28, ICON_BUTTON = 72, ICON_SIZE = 40, ICON_GAP = 12; // level with the date
 
     // The Settings tile opens a small menu: the home screen's own settings, then the TV's.
-    private static final String[] SETTINGS_ITEMS = {"Wallpaper", "Brightness", "TV settings"};
+    private static final String[] SETTINGS_ITEMS = {"Wallpaper", "Market board", "Brightness", "TV settings"};
     // Android TV 11 and later (Google TV too) has no Display page, but its "Display & Sound" page holds Picture.
     private static final String[] TV_DISPLAY_SOUND = {"com.android.tv.settings",
             "com.android.tv.settings.device.displaysound.DisplaySoundActivity"};
@@ -435,6 +435,18 @@ public class MainActivity extends Activity {
         });
     }
 
+    // Settings > Market board: OK moves a row to its next choice, and the board behind (not dimmed)
+    // changes at once. Back closes it.
+    private void showBoardSettings(int row) {
+        List<String> rows = new ArrayList<>();
+        for (int i = 0; i < MarketBoard.SETTINGS.length; i++)
+            rows.add(Strings.t(MarketBoard.SETTINGS[i][0]) + ":  " + MarketBoard.SETTINGS[i][1 + board.setting(i)]);
+        panel(Strings.t("Market board"), rows, null, 0, row, which -> {}, which -> {
+            board.set(which, (board.setting(which) + 1) % (MarketBoard.SETTINGS[which].length - 1));
+            showBoardSettings(which);
+        });
+    }
+
     // A glow colour made solid over the base, three times as strong, so a small dot shows it.
     private static int glow(int glow, int base) {
         float a = Math.min(1f, 3 * (glow >>> 24) / 255f);
@@ -679,7 +691,8 @@ public class MainActivity extends Activity {
         } else if (SETTINGS.equals(key)) {
             dropdown(tile(SETTINGS), SETTINGS_ITEMS, which -> {
                 if (which == 0) showWallpapers();
-                else if (which == 1) openBrightness();
+                else if (which == 1) showBoardSettings(0);
+                else if (which == 2) openBrightness();
                 else openTvSettings();
             });
             return;

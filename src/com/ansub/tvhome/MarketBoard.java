@@ -39,7 +39,7 @@ import java.util.regex.Pattern;
 
 // The market board on the home screen: a scrolling strip of world indices and a Nifty 50 grid, one
 // equal box per stock in index-weight order, coloured by the day's change. Refreshed every 5 minutes
-// while Home is in front. Each box has a triangle along its bottom: where today's price sits
+// while Home is in front (every 5 minutes unless changed in Settings). Each box has a triangle along its bottom: where today's price sits
 // between its 52-week low (left) and high (right). A 24-hour clock sits top right.
 //
 // ponytail: both sources are the websites' own data, not published APIs. NSE's index-tracker page
@@ -56,13 +56,23 @@ final class MarketBoard {
             + "\"params\":[{\"field\":\"idxlist.Indexid\",\"op\":\"\",\"val\":\"13\"},"
             + "{\"field\":\"Exch\",\"op\":\"\",\"val\":\"NSE\"},{\"field\":\"OgInst\",\"op\":\"\",\"val\":\"ES\"}],"
             + "\"fields\":[\"Sym\",\"Ltp\",\"PPerchange\",\"High1Yr\",\"Low1Yr\",\"LastTradeTime\"]}}";
-    // Prices from Dhan first, NSE only if Dhan fails. Off until Dhan is seen updating during market
-    // hours; meanwhile NSE gives prices (Dhan as its backup) and Dhan the 52-week numbers once a day.
-    static final boolean DHAN_FIRST = false;
+    // Settings > Market board: a label and its choices; the saved value is the choice's index.
+    // "Prices from" picks the grid's first source, the other is its backup. Dhan gives the 52-week
+    // numbers once a day either way.
+    static final String[][] SETTINGS = {
+        {"52-week marker", "On", "Off"},
+        {"Refresh every", "1 min", "2 min", "5 min", "10 min", "15 min"},
+        {"Colour cap", "±2%", "±3%", "±5%"},
+        {"Prices from", "NSE", "Dhan"},
+    };
+    private static final String[] SETTING_KEYS = {"board_marker", "board_refresh", "board_cap", "board_source"};
+    private static final int[] DEFAULTS = {0, 2, 1, 0};
+    private static final int[] REFRESH_MIN = {1, 2, 5, 10, 15};
+    private static final double[] CAPS = {2, 3, 5};
     // NSE drops connections that don't look like a browser.
     private static final String UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
             + "(KHTML, like Gecko) Chrome/130 Safari/537.36";
-    private static final long REFRESH = 5 * 60 * 1000, RETRY = 30 * 1000; // retry sooner when nothing came back
+    private static final long RETRY = 30 * 1000; // retry sooner when nothing came back
     private static final long OPEN_AGE = 20 * 60 * 1000; // a quote newer than this means its market is open
     // NSE's trading days and hours (holidays/holidays.json in this repo, kept current by its GitHub
     // Action). Outside them NSE isn't asked: its numbers can't change. Downloaded once a day.
@@ -96,7 +106,7 @@ final class MarketBoard {
     private final Map<String, List<View>> cards = new HashMap<>();
     private final Map<String, Quote> quotes = new HashMap<>();
     private final ValueAnimator scroll;
-    private long nextFetch;
+    private long nextFetch, lastFetch;
     private boolean running, fetching;
     private volatile boolean haveNifty; // fetched NSE at least once since Home started
     private final Map<String, double[]> years = new HashMap<>(); // symbol -> 52-week {high, low}, from Dhan
@@ -106,6 +116,21 @@ final class MarketBoard {
     private volatile List<Stock> shown;
     // Testing only (install with --ez demo true): no network, about a dozen random prices move every 30s.
     private boolean demo;
+
+    int setting(int i) {
+        return ctx.getSharedPreferences(MainActivity.PREFS, 0).getInt(SETTING_KEYS[i], DEFAULTS[i]);
+    }
+
+    private long refresh() { return REFRESH_MIN[setting(1)] * 60 * 1000L; }
+
+    // Saves a setting and shows it at once: the grid redrawn, the next refresh moved, or a fetch
+    // from the newly chosen source.
+    void set(int i, int choice) {
+        ctx.getSharedPreferences(MainActivity.PREFS, 0).edit().putInt(SETTING_KEYS[i], choice).apply();
+        if (i == 1) nextFetch = Math.min(nextFetch, lastFetch + refresh());
+        else if (i == 3) nextFetch = System.currentTimeMillis();
+        else if (shown != null) showGrid(shown);
+    }
 
     void setDemo(boolean on) {
         demo = on;
@@ -191,7 +216,8 @@ final class MarketBoard {
             return;
         }
         fetching = true;
-        nextFetch = System.currentTimeMillis() + REFRESH;
+        lastFetch = System.currentTimeMillis();
+        nextFetch = lastFetch + refresh();
         new Thread(() -> {
             // Each source on its own, so one failing keeps the others (and its last good numbers).
             final Map<String, Quote> got = new HashMap<>();
@@ -285,7 +311,7 @@ final class MarketBoard {
     private List<Stock> prices() {
         for (int i = 0; i < 2; i++) {
             try {
-                if ((i == 0) == DHAN_FIRST) return keepYears(dhan());
+                if ((i == 0) == (setting(3) == 1)) return keepYears(dhan());
                 List<Stock> l = nifty();
                 for (Stock s : l) weights.put(s.symbol, s.weight);
                 return l;
@@ -511,7 +537,7 @@ final class MarketBoard {
             LinearLayout cell = new LinearLayout(ctx);
             cell.setOrientation(LinearLayout.VERTICAL);
             cell.setGravity(Gravity.CENTER);
-            int heat = shade(s.pct);
+            int heat = shade(s.pct, CAPS[setting(2)]);
             cell.setBackgroundColor(heat);
             TextView name = text(Math.round(nameSize), 0xFFFFFFFF, NAME_FONT);
             name.setGravity(Gravity.CENTER);
@@ -529,7 +555,7 @@ final class MarketBoard {
             pct.setGravity(Gravity.CENTER);
             cell.addView(pct, spaced());
             grid.addView(cell, at(x, y, cw, ch));
-            if (s.high52 > s.low52) { // 52-week position: left edge = low, right edge = high
+            if (s.high52 > s.low52 && setting(0) == 0) { // 52-week position: left edge = low, right edge = high
                 int tw = px(24), th = px(16), inset = px(14);
                 double t = (s.price - s.low52) / (s.high52 - s.low52);
                 int tx = x + inset + (int) Math.round(t * (cw - 2 * inset)) - tw / 2;
@@ -596,10 +622,10 @@ final class MarketBoard {
         return out;
     }
 
-    // Grey at 0%, full red or green at ±3% and beyond.
+    // Grey at 0%, full red or green at ±cap% (3 unless changed in Settings) and beyond.
     // The full colours are kept a little dark so white text stays at 5:1 contrast or better.
-    static int shade(double pct) {
-        double t = 0.25 + 0.75 * Math.min(Math.abs(pct) / 3, 1);
+    static int shade(double pct, double cap) {
+        double t = 0.25 + 0.75 * Math.min(Math.abs(pct) / cap, 1);
         int[] end = pct >= 0 ? new int[] {14, 138, 67} : new int[] {200, 48, 62}, base = {38, 38, 42};
         int r = (int) Math.round(base[0] + (end[0] - base[0]) * t), g = (int) Math.round(base[1] + (end[1] - base[1]) * t),
             b = (int) Math.round(base[2] + (end[2] - base[2]) * t);
