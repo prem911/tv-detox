@@ -39,7 +39,7 @@ import java.util.regex.Pattern;
 
 // The market board on the home screen: a scrolling strip of world indices and a Nifty 50 grid, one
 // equal box per stock in index-weight order, coloured by the day's change. Refreshed every 5 minutes
-// while Home is in front (every 5 minutes unless changed in Settings). Each box has a triangle along its bottom: where today's price sits
+// while Home is in front (every 5 minutes unless changed in Settings). Each box has a diamond along its bottom: where today's price sits
 // between its 52-week low (left) and high (right). A 24-hour clock sits top right.
 //
 // ponytail: both sources are the websites' own data, not published APIs. NSE's index-tracker page
@@ -587,10 +587,10 @@ final class MarketBoard {
             cell.addView(pct, spaced());
             grid.addView(cell, at(x, y, cw, ch));
             if (s.high52 > s.low52 && setting(0) == 0) { // 52-week position: left edge = low, right edge = high
-                int tw = px(24), th = px(16), inset = px(14);
+                int d = px(14), inset = px(14);
                 double t = (s.price - s.low52) / (s.high52 - s.low52);
-                int tx = x + inset + (int) Math.round(t * (cw - 2 * inset)) - tw / 2;
-                grid.addView(triangle(ink & 0xC8FFFFFF), at(tx, y + ch - px(23), tw, th));
+                int dx = x + inset + (int) Math.round(t * (cw - 2 * inset)) - d / 2;
+                grid.addView(diamond(ink & 0xC8FFFFFF), at(dx, y + ch - px(22), d, d));
             }
             Double was = lastPrice.put(s.symbol, s.price);
             if (was != null && was != s.price) flash(s.price > was, ink, price, pct);
@@ -598,11 +598,13 @@ final class MarketBoard {
         shown = stocks;
     }
 
-    private View triangle(int colour) {
+    // A square turned 45 degrees.
+    private View diamond(int colour) {
         android.graphics.Path p = new android.graphics.Path();
         p.moveTo(0.5f, 0);
-        p.lineTo(1, 1);
-        p.lineTo(0, 1);
+        p.lineTo(1, 0.5f);
+        p.lineTo(0.5f, 1);
+        p.lineTo(0, 0.5f);
         p.close();
         android.graphics.drawable.ShapeDrawable d =
                 new android.graphics.drawable.ShapeDrawable(new android.graphics.drawable.shapes.PathShape(p, 1, 1));
