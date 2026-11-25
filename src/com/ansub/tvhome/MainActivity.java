@@ -114,6 +114,7 @@ public class MainActivity extends Activity {
     // that get darker towards the bottom, so the white labels stay easy to read. Only colours, no
     // images, so every one costs the same.
     private static final String[] WALLPAPER_NAMES = {"Black", "Charcoal", "Slate", "Navy", "Teal", "Maroon", "Olive",
+            "Grey", "Stone", "Steel", "Pine", "Mauve", "Clay", "Wine",
             "Dusk", "Midnight", "Plum", "Forest", "Graphite", "Ocean", "Ember",
             "Sunset", "Lagoon", "Aurora", "Coral", "Iris", "Meadow", "Gold"};
     private static final int[][] WALLPAPERS = {
@@ -122,6 +123,11 @@ public class MainActivity extends Activity {
         {0xFF1E2530, 0xFF1E2530, 0xFF1E2530, 0, 0}, {0xFF0B1530, 0xFF0B1530, 0xFF0B1530, 0, 0},
         {0xFF06282B, 0xFF06282B, 0xFF06282B, 0, 0}, {0xFF2A0A10, 0xFF2A0A10, 0xFF2A0A10, 0, 0},
         {0xFF1E2210, 0xFF1E2210, 0xFF1E2210, 0, 0},
+        // Lighter flat colours: as light as they go while the grey date and clock still read at 4.5:1.
+        {0xFF4A4D52, 0xFF4A4D52, 0xFF4A4D52, 0, 0}, {0xFF55504A, 0xFF55504A, 0xFF55504A, 0, 0},
+        {0xFF3E5068, 0xFF3E5068, 0xFF3E5068, 0, 0}, {0xFF2D5A4A, 0xFF2D5A4A, 0xFF2D5A4A, 0, 0},
+        {0xFF5A3F6A, 0xFF5A3F6A, 0xFF5A3F6A, 0, 0}, {0xFF6E4436, 0xFF6E4436, 0xFF6E4436, 0, 0},
+        {0xFF6A2E3E, 0xFF6A2E3E, 0xFF6A2E3E, 0, 0},
         {0xFF15100F, 0xFF0A0809, 0xFF050405, 0x36FF8048, 0x2EAA3C8C},
         {0xFF0E1220, 0xFF080A13, 0xFF040509, 0x384A6CFF, 0x2E5A3CC8},
         {0xFF170E19, 0xFF0C070D, 0xFF050306, 0x38C050B4, 0x2E6440D2},
