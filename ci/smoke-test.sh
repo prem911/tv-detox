@@ -29,11 +29,11 @@ esac
 adb -s "$TV" shell input keyevent KEYCODE_HOME
 wait_home || fail "home screen not in front"
 
-echo "== home screen opens on the market board, with Settings a screen down"
+echo "== home screen opens on the market board, with Settings by the network icon"
 ui | grep -qE 'text="[0-9]{2}:[0-9]{2}"' || fail "no clock"
+ui | grep -q 'content-desc="Settings"' || fail "no Settings icon"
 adb -s "$TV" shell input keyevent KEYCODE_DPAD_DOWN; adb -s "$TV" shell input keyevent KEYCODE_DPAD_DOWN; sleep 1
 x=$(ui)
-echo "$x" | grep -q 'text="Settings"' || fail "no Settings tile"
 tiles=$(echo "$x" | grep -o 'focusable="true"' | wc -l | tr -d ' ')
 echo "   $tiles tiles"
 

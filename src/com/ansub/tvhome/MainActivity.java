@@ -528,34 +528,37 @@ public class MainActivity extends Activity {
             addTile(root, pkg, label, banner, null, icon, gridX(i), gridY(i), w, h);
         }
 
-        // Bottom row: Play Store, HDMI inputs, Settings and Add app, six at most.
+        // Bottom row: Play Store, HDMI inputs and Add app, six at most. Settings is at the top right.
         int col = 0;
         boolean store = !apps.contains(PLAY_STORE) && launchIntent(pm, PLAY_STORE) != null;
         List<TvInputInfo> inputs = hdmiInputs();
-        int room = PER_ROW - 2 - (store ? 1 : 0);
+        int room = PER_ROW - 1 - (store ? 1 : 0);
         if (inputs.size() > room) inputs = inputs.subList(0, room);
         if (store)
             addTile(root, PLAY_STORE, "Play Store", null, LineIcon.PLAY, null, m + col++ * (w + g), bottomTop, w, h);
         for (TvInputInfo in : inputs)
             addTile(root, in.getId(), inputLabel(in), null, LineIcon.HDMI, null, m + col++ * (w + g), bottomTop, w, h);
-        addTile(root, SETTINGS, Strings.t("Settings"), null, LineIcon.SETTINGS, null, m + col++ * (w + g), bottomTop, w, h);
         addTile(root, ADD, Strings.t("Add app"), null, LineIcon.PLUS, null, m + col * (w + g), bottomTop, w, h);
 
-        // Plain icons at the top right, level with the date: any settings shortcuts picked, then the
-        // network icon. Added last, so the first app keeps first focus; Up from the apps reaches them.
+        // Plain icons at the top right, level with the date: any settings shortcuts picked, Settings,
+        // then the network icon. Added last, so the first app keeps first focus; Up from the apps
+        // reaches them.
         List<Integer> quick = quickList();
         int ib = px(ICON_BUTTON), ig = px(ICON_GAP);
         // The last icon's right edge lines up with the apps' (its focus circle sticks out past them).
         int qx = getResources().getDisplayMetrics().widthPixels - m + (ib - px(ICON_SIZE)) / 2
-                - (quick.size() + 1) * ib - quick.size() * ig;
+                - (quick.size() + 2) * ib - (quick.size() + 1) * ig;
+        int first = qx;
         for (int q : quick) {
             addIcon(QUICK + QUICK_NAMES[q], Strings.t(QUICK_LABELS[q]), new LineIcon(QUICK_ICONS[q]), qx);
             qx += ib + ig;
         }
+        addIcon(SETTINGS, Strings.t("Settings"), new LineIcon(LineIcon.SETTINGS), qx);
+        qx += ib + ig;
         netIcon = addIcon(NETWORK, Strings.t("Network"), null, qx);
         // The clock sits just left of the icons.
         ((FrameLayout.LayoutParams) board.clock.getLayoutParams()).rightMargin =
-                getResources().getDisplayMetrics().widthPixels - (qx - quick.size() * (ib + ig)) + px(8);
+                getResources().getDisplayMetrics().widthPixels - first + px(8);
         board.clock.requestLayout();
         netState = -1;
         refreshNetwork();
@@ -1012,14 +1015,14 @@ public class MainActivity extends Activity {
         int tileBottom = at[1] + Math.round(anchor.getHeight() * anchor.getScaleY());
         int w = Math.max(Math.max(Math.round(anchor.getWidth() * anchor.getScaleX()), px(320)), (int) Math.ceil(widest));
         int h = items.length * rowH + 2 * pad;
-        int y = tileBottom + px(64);
+        int y = tileBottom + (anchor.getHeight() > px(ICON_BUTTON) ? px(64) : px(12)); // tiles have a name below
         if (y + h > getResources().getDisplayMetrics().heightPixels - px(24)) y = at[1] - h - px(16);
         Window win = d.getWindow();
         win.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         win.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         win.setGravity(Gravity.TOP | Gravity.START);
         android.view.WindowManager.LayoutParams lp = win.getAttributes();
-        lp.x = at[0];
+        lp.x = Math.min(at[0], getResources().getDisplayMetrics().widthPixels - w - px(24)); // on screen at the right
         lp.y = y;
         lp.width = w;
         lp.height = h;
