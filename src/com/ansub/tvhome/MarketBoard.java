@@ -573,11 +573,13 @@ final class MarketBoard {
             price.setText(whole.format(s.price));
             price.setFontFeatureSettings("tnum");
             price.setGravity(Gravity.CENTER);
+            price.setPadding(px(10), 0, px(10), 0); // room for the change highlight
             cell.addView(price, spaced());
             TextView pct = text(px(28), ink, semibold);
             pct.setText(String.format(Locale.US, "%s%.2f%%", s.pct >= 0 ? "+" : "−", Math.abs(s.pct)));
             pct.setFontFeatureSettings("tnum");
             pct.setGravity(Gravity.CENTER);
+            pct.setPadding(px(10), 0, px(10), 0);
             cell.addView(pct, spaced());
             grid.addView(cell, at(x, y, cw, ch));
             if (s.high52 > s.low52 && setting(0) == 0) { // 52-week position: left edge = low, right edge = high
@@ -587,7 +589,7 @@ final class MarketBoard {
                 grid.addView(triangle(ink & 0xC8FFFFFF), at(tx, y + ch - px(23), tw, th));
             }
             Double was = lastPrice.put(s.symbol, s.price);
-            if (was != null && was != s.price) flash(cell, s.price > was, heat, price, pct);
+            if (was != null && was != s.price) flash(s.price > was, ink, price, pct);
         }
         shown = stocks;
     }
@@ -606,15 +608,24 @@ final class MarketBoard {
         return v;
     }
 
-    // A box whose price moved lights up bright green (up) or bright red (down), then fades back to its
-    // heat colour, while its price and change pop: easy to spot from across the room.
-    private static void flash(View cell, boolean up, int heat, View... pop) {
-        final int from = up ? 0xFF3DDC84 : 0xFFFF4D5E;
+    // Like a market ticker: when a price moves, its price and change get a green (up) or red (down)
+    // highlight with white text, held a moment, then faded back to the box as it was.
+    private void flash(boolean up, final int ink, final TextView... texts) {
         final ArgbEvaluator argb = new ArgbEvaluator();
-        tween(1500, f -> cell.setBackgroundColor((Integer) argb.evaluate(f, from, heat)));
-        tween(700, f -> {
-            float k = 1.25f - 0.25f * (1 - (1 - f) * (1 - f)); // eases out
-            for (View v : pop) { v.setScaleX(k); v.setScaleY(k); }
+        final GradientDrawable[] pills = new GradientDrawable[texts.length];
+        for (int i = 0; i < texts.length; i++) {
+            pills[i] = new GradientDrawable();
+            pills[i].setCornerRadius(px(8));
+            pills[i].setColor(up ? 0xFF0A7F40 : 0xFFD12A3B); // white text reads at 4.5:1 or better on both
+            texts[i].setBackground(pills[i]);
+        }
+        tween(2500, f -> {
+            float a = f < 0.4f ? 1 : 1 - (f - 0.4f) / 0.6f; // hold, then fade
+            for (int i = 0; i < texts.length; i++) {
+                pills[i].setAlpha(Math.round(255 * a));
+                texts[i].setTextColor((Integer) argb.evaluate(a, ink, 0xFFFFFFFF));
+                if (f >= 1) texts[i].setBackground(null);
+            }
         });
     }
 
@@ -700,7 +711,7 @@ final class MarketBoard {
 
     // A small gap above each line under the name, so the three lines read apart.
     private LinearLayout.LayoutParams spaced() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); // as wide as the text: the box centres it
         lp.topMargin = px(5);
         return lp;
     }
