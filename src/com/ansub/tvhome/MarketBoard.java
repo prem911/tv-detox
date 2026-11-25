@@ -178,6 +178,9 @@ final class MarketBoard {
 
         grid = new FrameLayout(ctx);
         // No background: the gaps between boxes show the wallpaper.
+        // Drawn once into a GPU layer and reused every frame while the strip moves; redrawn only when
+        // the boxes change. Same for each strip card (the whole row is too wide for one layer).
+        grid.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         root.addView(grid, at(0, px(GRID_TOP), width, px(BOTTOM - GRID_TOP)));
 
         clock = new android.widget.TextClock(ctx); // 24-hour, in the date's size and grey
@@ -481,6 +484,7 @@ final class MarketBoard {
     // Name and open dot on top; under it the value, small, and the change, big.
     private View card(String name, boolean futures) {
         LinearLayout card = new LinearLayout(ctx);
+        card.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(px(20), 0, px(20), 0);
