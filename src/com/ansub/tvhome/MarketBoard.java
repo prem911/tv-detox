@@ -1,6 +1,6 @@
 package com.ansub.tvhome;
 
-import android.animation.ValueAnimator;
+import android.animation.ArgbEvaluator;
 import android.content.Context;
 import android.graphics.Paint;
 import android.graphics.Typeface;
@@ -10,7 +10,7 @@ import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
-import android.view.animation.LinearInterpolator;
+import android.view.Choreographer;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -105,8 +105,11 @@ final class MarketBoard {
     // Each strip label has two cards: the strip holds two copies of itself so it loops without a gap.
     private final Map<String, List<View>> cards = new HashMap<>();
     private final Map<String, Quote> quotes = new HashMap<>();
-    private final ValueAnimator scroll;
-    private long nextFetch, lastFetch;
+    // The strip and the flash are moved frame by frame here, not with Android's animators: those
+    // stop dead when the TV has animations off in Developer options (the HiSmartTV A4 ships so).
+    private final Choreographer.FrameCallback scroll;
+    private long nextFetch, lastFetch, lastFrame;
+    private float offset; // how far the strip has scrolled
     private boolean running, fetching;
     private volatile boolean haveNifty; // fetched NSE at least once since Home started
     private final Map<String, double[]> years = new HashMap<>(); // symbol -> 52-week {high, low}, from Dhan
@@ -163,11 +166,15 @@ final class MarketBoard {
         // Its full width, not the screen's: cards past the edge must be laid out to scroll in.
         strip.addView(row, new FrameLayout.LayoutParams(px(48) + 2 * loop, -1));
         root.addView(strip, at(0, px(STRIP_TOP), width, px(STRIP_H)));
-        scroll = ValueAnimator.ofFloat(0, -loop);
-        scroll.setDuration(loop * 1000L / px(SPEED));
-        scroll.setInterpolator(new LinearInterpolator());
-        scroll.setRepeatCount(ValueAnimator.INFINITE);
-        scroll.addUpdateListener(a -> row.setTranslationX((Float) a.getAnimatedValue()));
+        final float speed = px(SPEED) / 1e9f; // px per nanosecond
+        scroll = new Choreographer.FrameCallback() {
+            @Override public void doFrame(long now) {
+                if (lastFrame != 0) offset = (offset + (now - lastFrame) * speed) % loop;
+                lastFrame = now;
+                row.setTranslationX(-offset);
+                if (running) Choreographer.getInstance().postFrameCallback(this);
+            }
+        };
 
         grid = new FrameLayout(ctx);
         grid.setBackgroundColor(0xFF050405);
@@ -191,14 +198,16 @@ final class MarketBoard {
         running = true;
         if (System.currentTimeMillis() >= nextFetch) fetch();
         tick.run();
-        if (scroll.isPaused()) scroll.resume(); else if (!scroll.isStarted()) scroll.start();
+        lastFrame = 0; // carry on from where it stopped
+        Choreographer.getInstance().removeFrameCallback(scroll);
+        Choreographer.getInstance().postFrameCallback(scroll);
     }
 
     // An app or Settings is in front: no fetching, no animating.
     void stop() {
         running = false;
         ui.removeCallbacks(tick);
-        scroll.pause();
+        Choreographer.getInstance().removeFrameCallback(scroll);
     }
 
     private final Runnable tick = new Runnable() {
@@ -584,15 +593,27 @@ final class MarketBoard {
     // A box whose price moved lights up bright green (up) or bright red (down), then fades back to its
     // heat colour, while its price and change pop: easy to spot from across the room.
     private static void flash(View cell, boolean up, int heat, View... pop) {
-        ValueAnimator a = ValueAnimator.ofArgb(up ? 0xFF3DDC84 : 0xFFFF4D5E, heat);
-        a.setDuration(1500);
-        a.addUpdateListener(v -> cell.setBackgroundColor((Integer) v.getAnimatedValue()));
-        a.start();
-        for (View v : pop) {
-            v.setScaleX(1.25f);
-            v.setScaleY(1.25f);
-            v.animate().scaleX(1f).scaleY(1f).setDuration(700).start();
-        }
+        final int from = up ? 0xFF3DDC84 : 0xFFFF4D5E;
+        final ArgbEvaluator argb = new ArgbEvaluator();
+        tween(1500, f -> cell.setBackgroundColor((Integer) argb.evaluate(f, from, heat)));
+        tween(700, f -> {
+            float k = 1.25f - 0.25f * (1 - (1 - f) * (1 - f)); // eases out
+            for (View v : pop) { v.setScaleX(k); v.setScaleY(k); }
+        });
+    }
+
+    interface Step { void at(float done); }
+
+    // Calls step every frame for ms milliseconds, with how far along it is, 0 to 1 (always ends on 1).
+    private static void tween(final long ms, final Step step) {
+        final long start = System.nanoTime(); // the same clock as frame times
+        Choreographer.getInstance().postFrameCallback(new Choreographer.FrameCallback() {
+            @Override public void doFrame(long now) {
+                float f = Math.max(0, Math.min(1, (now - start) / 1e6f / ms));
+                step.at(f);
+                if (f < 1) Choreographer.getInstance().postFrameCallback(this);
+            }
+        });
     }
 
     private static Stock copy(Stock o) {
