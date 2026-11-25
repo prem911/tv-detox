@@ -938,7 +938,8 @@ public class MainActivity extends Activity {
             pick.at(pos);
         });
         if (preview != null) {
-            list.setSelection(selected);
+            // Up to three rows above it stay in view, so the list doesn't look like it starts there.
+            list.setSelectionFromTop(selected, px(88) * Math.min(selected, 3));
             list.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
                 @Override public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) {
                     preview.at(pos);

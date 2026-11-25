@@ -114,7 +114,7 @@ final class MarketBoard {
     private volatile boolean haveNifty; // fetched NSE at least once since Home started
     private final Map<String, double[]> years = new HashMap<>(); // symbol -> 52-week {high, low}, from Dhan
     private final Map<String, Double> weights = new HashMap<>(); // symbol -> index weight, from NSE
-    private volatile long yearsAt; // when the 52-week numbers were last fetched
+    private volatile long yearsAt, weightsAt; // when the 52-week numbers and the weights were last fetched
     private final Map<String, Double> lastPrice = new HashMap<>(); // to flash the boxes that moved
     private volatile List<Stock> shown;
     // Testing only (install with --ez demo true): no network, about a dozen random prices move every 30s.
@@ -191,6 +191,9 @@ final class MarketBoard {
         cp.topMargin = px(44); // level with the date
         root.addView(clock, cp);
         loadHolidays();
+        for (String w : ctx.getSharedPreferences(MainActivity.PREFS, 0).getString("board_weights", "").split(","))
+            if (w.indexOf(':') > 0)
+                weights.put(w.substring(0, w.lastIndexOf(':')), Double.parseDouble(w.substring(w.lastIndexOf(':') + 1)));
     }
 
     // Home came to the front: catch up if a refresh is due, and start the clock and the strip.
@@ -321,12 +324,22 @@ final class MarketBoard {
         for (int i = 0; i < 2; i++) {
             try {
                 if ((i == 0) == (setting(3) == 1)) return keepYears(dhan());
-                List<Stock> l = nifty();
-                for (Stock s : l) weights.put(s.symbol, s.weight);
-                return l;
+                return keepWeights(nifty());
             } catch (Exception ignored) {}
         }
         return null;
+    }
+
+    // NSE's index weights, the grid's order. Saved, so a start-up where NSE fails keeps the order.
+    private List<Stock> keepWeights(List<Stock> l) {
+        StringBuilder saved = new StringBuilder();
+        for (Stock s : l) {
+            weights.put(s.symbol, s.weight);
+            saved.append(s.symbol).append(':').append(s.weight).append(',');
+        }
+        ctx.getSharedPreferences(MainActivity.PREFS, 0).edit().putString("board_weights", saved.toString()).apply();
+        weightsAt = System.currentTimeMillis();
+        return l;
     }
 
     private List<Stock> keepYears(List<Stock> l) {
@@ -335,8 +348,11 @@ final class MarketBoard {
         return l;
     }
 
-    // On the fetch thread: add the 52-week numbers (refetched daily) and NSE's weight order.
+    // On the fetch thread: add the 52-week numbers and NSE's weight order (each refetched daily,
+    // whichever source gives the prices).
     private List<Stock> merge(List<Stock> l) {
+        if (System.currentTimeMillis() - weightsAt > 24L * 60 * 60 * 1000)
+            try { keepWeights(nifty()); } catch (Exception ignored) {}
         if (System.currentTimeMillis() - yearsAt > 24L * 60 * 60 * 1000)
             try { keepYears(dhan()); } catch (Exception ignored) {}
         List<Stock> out = new ArrayList<>();
