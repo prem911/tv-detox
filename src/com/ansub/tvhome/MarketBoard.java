@@ -177,7 +177,7 @@ final class MarketBoard {
         };
 
         grid = new FrameLayout(ctx);
-        grid.setBackgroundColor(0xFF050405);
+        // No background: the gaps between boxes show the wallpaper.
         root.addView(grid, at(0, px(GRID_TOP), width, px(BOTTOM - GRID_TOP)));
 
         clock = new android.widget.TextClock(ctx); // 24-hour, in the date's size and grey
